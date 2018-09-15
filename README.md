@@ -1,6 +1,7 @@
 # scummvm_mappings
 Patch to change the default joystick mappings in ScummVM for RetroPie
 
+# CREDITS
 First things first, I did *NOT* create this. The credit goes to u/theheadfl over at Reddit. See [this thread](https://www.reddit.com/r/RetroPie/comments/90rv8u/guide_make_scummvm_joypad_mappings/) for his original patch targetting RetroPie-Setup 4.4.0
 I merely updated the patch to work with RetroPie-Setup 4.4.2
 

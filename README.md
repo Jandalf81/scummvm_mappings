@@ -43,5 +43,6 @@ Simply start ScummVM like you are used to. The patch makes it so the controller 
 # How to change the mappings
 Open the following file and change the mapping there
 
-   nano /opt/retropie/emulators/scummvm/controller_map.sh
+    nano /opt/retropie/emulators/scummvm/controller_map.sh
 
+Change the mappings as desired, save with `CTRL + O` and exit with `CTRL + X`

@@ -1,0 +1,410 @@
+diff --git a/scriptmodules/emulators/scummvm.sh b/scriptmodules/emulators/scummvm.sh
+index 88a23ba2..2df9cb1a 100644
+--- a/scriptmodules/emulators/scummvm.sh
++++ b/scriptmodules/emulators/scummvm.sh
+@@ -34,6 +34,9 @@ function sources_scummvm() {
+     if isPlatform "rpi"; then
+         applyPatch "$md_data/01_rpi_enable_scalers.diff"
+     fi
++		
++	# Fix ScummVM to allow controllers to be configurable
++	applyPatch "$md_data/scummvm_joystick_config.patch"
+ }
+ 
+ function build_scummvm() {
+@@ -56,6 +59,8 @@ function install_scummvm() {
+     make install
+     mkdir -p "$md_inst/extra"
+     cp -v backends/vkeybd/packs/vkeybd_*.zip "$md_inst/extra"
++	cp -v "$md_data/controller_map.sh" "$md_inst"
++	chmod u+x "$md_inst/controller_map.sh"
+ }
+ 
+ function configure_scummvm() {
+@@ -75,6 +80,7 @@ function configure_scummvm() {
+     cat > "$romdir/scummvm/+Start $name.sh" << _EOF_
+ #!/bin/bash
+ game="\$1"
++$md_inst/controller_map.sh
+ pushd "$romdir/scummvm" >/dev/null
+ $md_inst/bin/scummvm --fullscreen --joystick=0 --extrapath="$md_inst/extra" \$game
+ while read id desc; do
+diff --git a/scriptmodules/emulators/scummvm/controller_map.sh b/scriptmodules/emulators/scummvm/controller_map.sh
+new file mode 100755
+index 00000000..9691b00d
+--- /dev/null
++++ b/scriptmodules/emulators/scummvm/controller_map.sh
+@@ -0,0 +1,176 @@
++#!/usr/bin/env bash
++
++# Default Mappings
++# Available Keys: a,b,x,y,select,start,l,r
++action_lclick="a"
++action_rclick="b"
++action_vkeybd="select"
++action_svmmenu="start"
++action_escape="l"
++action_period="x"
++action_space="y"
++
++trim() {
++	local var="$*"
++	var="${var#"${var%%[![:space:]]*}"}"
++	var="${var%"${var##*[![:space:]]}"}"
++	echo -n "$var"
++}
++
++strip_quotes() {
++	local var="$*"
++	var=$(trim "$var")
++	var="${var%\"}"
++	var="${var#\"}"
++	echo -n "$var"
++}
++
++js_name="none"
++
++js_name=$(cat /proc/bus/input/devices | grep -E 'Name=|Handler' | while read -r line ; do
++	#echo "Processing $line"
++
++	parsing_name=false
++	parsing_handlers=false
++	found_js=false
++
++	IFS='=' read -r -a array <<< "$line"
++	for token in "${array[@]}"
++	do
++		temp=$(strip_quotes "$token")
++		
++		if [ "$parsing_name" = true ]; then
++			js_name="$temp"
++			continue
++		fi
++		if [ "$parsing_handlers" = true ]; then
++			if [[ "$temp" = *"js0"* ]]; then
++				echo "$js_name"
++				found_js=true
++				break
++			fi
++		fi
++
++		if [ "$temp" = "N: Name" ]; then
++			parsing_name=true
++			continue
++		fi
++
++		if [[ "$temp" = *"Handler"* ]]; then
++			parsing_handlers=true
++		fi
++	done
++
++	if [ "$found_js" = true ]; then
++		break
++	fi
++done)
++
++if [ "$js_name" = "" ]; then
++	echo "No js0 found"
++	exit 1
++fi
++
++echo "js0 = $js_name"
++
++js_config_name="/opt/retropie/configs/all/retroarch/autoconfig/$js_name.cfg"
++
++if [ ! -f "$js_config_name" ]; then
++	echo "No config file for js0 found at $js_config_name"
++fi
++
++echo "Found retroarch config at $js_config_name"
++
++while read -r line
++do
++	IFS='=' read -r -a array <<< "$line"
++	for token in "${array[@]}"
++	do
++		temp2=$(strip_quotes "$token")
++		#temp2="${temp2%\"}"
++		#temp2="${temp2#\"}"
++
++		#echo "$token ; $temp2"
++
++		if [ "$temp2" = "input_a_btn" ]; then
++			btn_name="a"
++			continue
++		fi
++		if [ "$temp2" = "input_b_btn" ]; then
++			btn_name="b"
++			continue
++		fi
++		if [ "$temp2" = "input_x_btn" ]; then
++			btn_name="x"
++			continue
++		fi
++		if [ "$temp2" = "input_y_btn" ]; then
++			btn_name="y"
++			continue
++		fi
++		if [ "$temp2" = "input_start_btn" ]; then
++			btn_name="start"
++			continue
++		fi
++		if [ "$temp2" = "input_select_btn" ]; then
++			btn_name="select"
++			continue
++		fi
++		if [ "$temp2" = "input_l_btn" ]; then
++			btn_name="l"
++			continue
++		fi
++		if [ "$temp2" = "input_r_btn" ]; then
++			btn_name="r"
++			continue
++		fi
++
++		if [ "$btn_name" != "" ]; then
++			#echo "$btn_name = $temp2"
++			eval "btn_$btn_name=\$temp2"
++			btn_name=""
++			continue
++		fi
++	done
++done < "$js_config_name"
++
++eval "action_lclick_id=\$btn_$action_lclick"
++eval "action_rclick_id=\$btn_$action_rclick"
++eval "action_vkeybd_id=\$btn_$action_vkeybd"
++eval "action_svmmenu_id=\$btn_$action_svmmenu"
++eval "action_escape_id=\$btn_$action_escape"
++eval "action_period_id=\$btn_$action_period"
++eval "action_space_id=\$btn_$action_space"
++
++echo "Mappings For JS = $js_name"
++echo "Left Click = $action_lclick = $action_lclick_id"
++echo "Right Click = $action_rclick = $action_rclick_id"
++echo "Virt. Keyboard = $action_vkeybd = $action_vkeybd_id"
++echo "ScummVM Menu = $action_svmmenu = $action_svmmenu_id"
++echo "Escape = $action_escape = $action_escape_id"
++echo "Period = $action_period = $action_period_id"
++echo "Space = $action_space = $action_space_id"
++
++input_ini="/opt/retropie/configs/scummvm/scummvm.ini"
++
++if [ ! -f "$input_ini" ]; then
++	echo "No ScummVM INI file detected, creating default."
++	echo "[joystick]" > "$input_ini"
++fi
++
++joystick_section_guaranteed=$((grep -q '^\[joystick\]' $input_ini && cat $input_ini) || (cat $input_ini && echo "" && echo "[joystick]"))
++joystick_section_cleared=$(echo "$joystick_section_guaranteed" | sed -e '/\[joystick\]/,/\[.+\]/ { /^# /d; /^lclick/d; /^rclick/d; /^svmmenu/d; /^vkeybd/d; /^escape/d; /^period/d; /^space/d; }')
++
++
++echo "$joystick_section_cleared" | sed \
++	-e "/^\[joystick\]/a\# $js_name" \
++	-e "/^\[joystick\]/a\lclick=$action_lclick_id" \
++	-e "/^\[joystick\]/a\rclick=$action_rclick_id" \
++	-e "/^\[joystick\]/a\svmmenu=$action_svmmenu_id" \
++	-e "/^\[joystick\]/a\vkeybd=$action_vkeybd_id" \
++	-e "/^\[joystick\]/a\escape=$action_escape_id" \
++	-e "/^\[joystick\]/a\period=$action_period_id" \
++	-e "/^\[joystick\]/a\space=$action_space_id" \
++	> "$input_ini"
++
++
+diff --git a/scriptmodules/emulators/scummvm/scummvm_joystick_config.patch b/scriptmodules/emulators/scummvm/scummvm_joystick_config.patch
+new file mode 100644
+index 00000000..0ff8ae5b
+--- /dev/null
++++ b/scriptmodules/emulators/scummvm/scummvm_joystick_config.patch
+@@ -0,0 +1,191 @@
++diff --git a/backends/events/sdl/sdl-events.cpp b/backends/events/sdl/sdl-events.cpp
++index d01d9c6..0f68a1d 100644
++--- a/backends/events/sdl/sdl-events.cpp
+++++ b/backends/events/sdl/sdl-events.cpp
++@@ -52,6 +52,9 @@
++ #define JOY_BUT_PERIOD 1
++ #define JOY_BUT_SPACE 4
++ #define JOY_BUT_F5 5
+++#ifdef ENABLE_VKEYBD
+++#define JOY_BUT_VKEYBOARD 7
+++#endif
++ 
++ #if SDL_VERSION_ATLEAST(2, 0, 0)
++ static uint32 convUTF8ToUTF32(const char *src) {
++@@ -76,6 +79,15 @@ static uint32 convUTF8ToUTF32(const char *src) {
++ 
++ SdlEventSource::SdlEventSource()
++     : EventSource(), _scrollLock(false), _joystick(0), _lastScreenID(0), _graphicsManager(0), _queuedFakeMouseMove(false)
+++	, _action_lclick(JOY_BUT_LMOUSE)
+++	, _action_rclick(JOY_BUT_RMOUSE)
+++	, _action_svmmenu(JOY_BUT_F5)
+++#ifdef ENABLE_VKEYBD
+++	, _action_vkeybd(JOY_BUT_VKEYBOARD)
+++#endif
+++	, _action_escape(JOY_BUT_ESCAPE)
+++	, _action_period(JOY_BUT_PERIOD)
+++	, _action_space(JOY_BUT_SPACE)
++ #if SDL_VERSION_ATLEAST(2, 0, 0)
++       , _queuedFakeKeyUp(false), _fakeKeyUp()
++ #endif
++@@ -100,6 +112,42 @@ SdlEventSource::SdlEventSource()
++ 			      SDL_JoystickName(joystick_num)
++ #endif
++ 			     );
+++
+++
+++			if (ConfMan.hasMiscDomain("joystick"))
+++			{
+++				const Common::ConfigManager::Domain* joystickDomain = ConfMan.getDomain("joystick");
+++				if (joystickDomain->contains("lclick"))
+++				{
+++					_action_lclick = (int)joystickDomain->getVal("lclick").asUint64();
+++				}
+++				if (joystickDomain->contains("rclick"))
+++				{
+++					_action_rclick = (int)joystickDomain->getVal("rclick").asUint64();
+++				}
+++				if (joystickDomain->contains("svmmenu"))
+++				{
+++					_action_svmmenu = (int)joystickDomain->getVal("svmmenu").asUint64();
+++				}
+++				if (joystickDomain->contains("escape"))
+++				{
+++					_action_escape = (int)joystickDomain->getVal("escape").asUint64();
+++				}
+++				if (joystickDomain->contains("period"))
+++				{
+++					_action_period = (int)joystickDomain->getVal("period").asUint64();
+++				}
+++				if (joystickDomain->contains("space"))
+++				{
+++					_action_space = (int)joystickDomain->getVal("space").asUint64();
+++				}
+++#ifdef ENABLE_VKEYBD
+++				if (joystickDomain->contains("vkeybd"))
+++				{
+++					_action_vkeybd = (int)joystickDomain->getVal("vkeybd").asUint64();
+++				}
+++#endif
+++			}
++ 		} else {
++ 			warning("Invalid joystick: %d", joystick_num);
++ 		}
++@@ -805,62 +853,69 @@ bool SdlEventSource::handleMouseButtonUp(SDL_Event &ev, Common::Event &event) {
++ }
++ 
++ bool SdlEventSource::handleJoyButtonDown(SDL_Event &ev, Common::Event &event) {
++-	if (ev.jbutton.button == JOY_BUT_LMOUSE) {
+++	if (ev.jbutton.button == _action_lclick) {
++ 		event.type = Common::EVENT_LBUTTONDOWN;
++ 		return processMouseEvent(event, _km.x / MULTIPLIER, _km.y / MULTIPLIER);
++-	} else if (ev.jbutton.button == JOY_BUT_RMOUSE) {
+++	} else if (ev.jbutton.button == _action_rclick) {
++ 		event.type = Common::EVENT_RBUTTONDOWN;
++ 		return processMouseEvent(event, _km.x / MULTIPLIER, _km.y / MULTIPLIER);
++-	} else {
+++	}
+++#ifdef ENABLE_VKEYBD
+++	else if (ev.jbutton.button == _action_vkeybd) {
+++		event.type = Common::EVENT_VIRTUAL_KEYBOARD;
+++		return true;
+++	}
+++#endif
+++	else {
++ 		event.type = Common::EVENT_KEYDOWN;
++-		switch (ev.jbutton.button) {
++-		case JOY_BUT_ESCAPE:
+++		if (ev.jbutton.button == _action_escape) {
++ 			event.kbd.keycode = Common::KEYCODE_ESCAPE;
++ 			event.kbd.ascii = mapKey(SDLK_ESCAPE, (SDLMod)ev.key.keysym.mod, 0);
++-			break;
++-		case JOY_BUT_PERIOD:
+++		}
+++		else if (ev.jbutton.button == _action_period) {
++ 			event.kbd.keycode = Common::KEYCODE_PERIOD;
++ 			event.kbd.ascii = mapKey(SDLK_PERIOD, (SDLMod)ev.key.keysym.mod, 0);
++-			break;
++-		case JOY_BUT_SPACE:
+++		}
+++		else if (ev.jbutton.button == _action_space) {
++ 			event.kbd.keycode = Common::KEYCODE_SPACE;
++ 			event.kbd.ascii = mapKey(SDLK_SPACE, (SDLMod)ev.key.keysym.mod, 0);
++-			break;
++-		case JOY_BUT_F5:
+++		}
+++		else if (ev.jbutton.button == _action_svmmenu) {
++ 			event.kbd.keycode = Common::KEYCODE_F5;
+++			event.kbd.flags |= Common::KBD_CTRL;
++ 			event.kbd.ascii = mapKey(SDLK_F5, (SDLMod)ev.key.keysym.mod, 0);
++-			break;
++ 		}
++ 		return true;
++ 	}
++ }
++ 
++ bool SdlEventSource::handleJoyButtonUp(SDL_Event &ev, Common::Event &event) {
++-	if (ev.jbutton.button == JOY_BUT_LMOUSE) {
+++	if (ev.jbutton.button == _action_lclick) {
++ 		event.type = Common::EVENT_LBUTTONUP;
++ 		return processMouseEvent(event, _km.x / MULTIPLIER, _km.y / MULTIPLIER);
++-	} else if (ev.jbutton.button == JOY_BUT_RMOUSE) {
+++	}
+++	else if (ev.jbutton.button == _action_rclick) {
++ 		event.type = Common::EVENT_RBUTTONUP;
++ 		return processMouseEvent(event, _km.x / MULTIPLIER, _km.y / MULTIPLIER);
++-	} else {
+++	}
+++	else {
++ 		event.type = Common::EVENT_KEYUP;
++-		switch (ev.jbutton.button) {
++-		case JOY_BUT_ESCAPE:
+++		if (ev.jbutton.button == _action_escape) {
++ 			event.kbd.keycode = Common::KEYCODE_ESCAPE;
++ 			event.kbd.ascii = mapKey(SDLK_ESCAPE, (SDLMod)ev.key.keysym.mod, 0);
++-			break;
++-		case JOY_BUT_PERIOD:
+++		}
+++		else if (ev.jbutton.button == _action_period) {
++ 			event.kbd.keycode = Common::KEYCODE_PERIOD;
++ 			event.kbd.ascii = mapKey(SDLK_PERIOD, (SDLMod)ev.key.keysym.mod, 0);
++-			break;
++-		case JOY_BUT_SPACE:
+++		}
+++		else if (ev.jbutton.button == _action_space) {
++ 			event.kbd.keycode = Common::KEYCODE_SPACE;
++ 			event.kbd.ascii = mapKey(SDLK_SPACE, (SDLMod)ev.key.keysym.mod, 0);
++-			break;
++-		case JOY_BUT_F5:
+++		}
+++		else if (ev.jbutton.button == _action_svmmenu) {
++ 			event.kbd.keycode = Common::KEYCODE_F5;
+++			event.kbd.flags = 0;
++ 			event.kbd.ascii = mapKey(SDLK_F5, (SDLMod)ev.key.keysym.mod, 0);
++-			break;
++ 		}
++ 		return true;
++ 	}
++diff --git a/backends/events/sdl/sdl-events.h b/backends/events/sdl/sdl-events.h
++index 5fd3cb7..31706c5 100644
++--- a/backends/events/sdl/sdl-events.h
+++++ b/backends/events/sdl/sdl-events.h
++@@ -174,6 +174,19 @@ protected:
++ 	 */
++ 	Common::Event _fakeMouseMove;
++ 
+++	/**
+++	 * Stores the SDL joystick button IDs that correspond to each of the special joystick-enabled actions
+++	 */
+++	int _action_lclick;
+++	int _action_rclick;
+++	int _action_svmmenu;
+++#ifdef ENABLE_VKEYBD
+++	int _action_vkeybd;
+++#endif
+++	int _action_escape;
+++	int _action_period;
+++	int _action_space;
+++
++ #if SDL_VERSION_ATLEAST(2, 0, 0)
++ 	/**
++ 	 * Whether _fakeKeyUp contains an event we need to send.
